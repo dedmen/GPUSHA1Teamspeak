@@ -123,14 +123,11 @@ int main(void) {
     uint64_t startOffset =   47160063888ull;
     //uint64_t startOffset = 4284284665ull;
     A->buffer = startOffset;
-    uint64_t endOffset = 0xffffffffffull;
+    uint64_t endOffset = 0xfffffffffffull;
     uint64_t distanceToEnd = endOffset - startOffset;
 
-    uint64_t x64Steps = distanceToEnd / 128ull;
-    x64Steps -= x64Steps % 8192ull;
-    size_t global_item_size = 128ull * x64Steps; // Process the entire lists
-    
-    size_t local_item_size = 128; // Divide work items into groups of 64
+    size_t global_item_size = distanceToEnd;
+    size_t local_item_size = 1024; // Divide work items into groups of 64
 
 
 
@@ -148,9 +145,11 @@ int main(void) {
     auto start = std::chrono::high_resolution_clock::now();
 
 
-    size_t maxPerBlock = 6000000;
+    size_t maxPerBlock = 10000000;
     size_t numberOfBlocks = global_item_size / maxPerBlock;
     auto steps = global_item_size / numberOfBlocks;
+    steps -= steps % 8192ull;
+
 
     for (int i = 0; i < numberOfBlocks; ++i) {
 
