@@ -123,7 +123,7 @@ int main(void) {
     uint64_t startOffset =   47160063888ull;
     //uint64_t startOffset = 4284284665ull;
     A->buffer = startOffset;
-    uint64_t endOffset = 0xfffffffffull;
+    uint64_t endOffset = 0xffffffffffull;
     uint64_t distanceToEnd = endOffset - startOffset;
 
     uint64_t x64Steps = distanceToEnd / 128ull;
@@ -148,8 +148,11 @@ int main(void) {
     auto start = std::chrono::high_resolution_clock::now();
 
 
-    for (int i = 0; i < 4096; ++i) {
-        auto steps = global_item_size / 4096;
+    size_t maxPerBlock = 6000000;
+    size_t numberOfBlocks = global_item_size / maxPerBlock;
+    auto steps = global_item_size / numberOfBlocks;
+
+    for (int i = 0; i < numberOfBlocks; ++i) {
 
         ret = clEnqueueWriteBuffer(command_queue, a_mem_obj, CL_TRUE, 0,
             1 * sizeof(inbuf), A, 0, NULL, NULL);
