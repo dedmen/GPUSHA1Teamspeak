@@ -25,6 +25,213 @@ typedef struct {
     //};
 } outbuf;
 
+
+#include <intrin.h>
+unsigned rotate(unsigned n, int c)
+{
+    //return __builtin_ia32_rorhi(x, 7);  // 16-bit rotate, GNU C
+    return _rotl(n, c);  // gcc, icc, msvc.  Intel-defined.
+    //return __rold(x, n);  // gcc, icc.
+    // can't find anything for clang
+}
+
+
+// https://github.com/mohaps/TinySHA1
+#ifndef _TINY_SHA1_HPP_
+#define _TINY_SHA1_HPP_
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <stdint.h>
+namespace sha1
+{
+    class SHA1
+    {
+    public:
+        typedef uint32_t digest32_t[5];
+        inline static uint32_t LeftRotate(uint32_t value, size_t count) {
+            return (value << count) ^ (value >> (32 - count));
+        }
+        SHA1() { reset(); }
+        virtual ~SHA1() {}
+        SHA1(const SHA1& s) { *this = s; }
+        const SHA1& operator = (const SHA1& s) {
+            memcpy(m_digest, s.m_digest, 5 * sizeof(uint32_t));
+            memcpy(m_block, s.m_block, 64);
+            m_blockByteIndex = s.m_blockByteIndex;
+            m_byteCount = s.m_byteCount;
+            return *this;
+        }
+        SHA1& reset() {
+            m_digest[0] = 0x67452301;
+            m_digest[1] = 0xEFCDAB89;
+            m_digest[2] = 0x98BADCFE;
+            m_digest[3] = 0x10325476;
+            m_digest[4] = 0xC3D2E1F0;
+            m_blockByteIndex = 0;
+            m_byteCount = 0;
+            return *this;
+        }
+        SHA1& processByte(uint8_t octet) {
+            this->m_block[this->m_blockByteIndex++] = octet;
+            ++this->m_byteCount;
+            if (m_blockByteIndex == 64) {
+                this->m_blockByteIndex = 0;
+                processBlock();
+            }
+            return *this;
+        }
+        SHA1& processBlock(const void* const start, const void* const end) {
+            const uint8_t* begin = static_cast<const uint8_t*>(start);
+            const uint8_t* finish = static_cast<const uint8_t*>(end);
+            while (begin != finish) {
+                processByte(*begin);
+                begin++;
+            }
+            return *this;
+        }
+        SHA1& processBytes(const void* const data, size_t len) {
+            const uint8_t* block = static_cast<const uint8_t*>(data);
+            processBlock(block, block + len);
+            return *this;
+        }
+
+
+
+
+        const uint32_t* getDigest(digest32_t digest) {
+            size_t bitCount = this->m_byteCount * 8;
+            processByte(0x80);
+            if (this->m_blockByteIndex > 56) {
+                while (m_blockByteIndex != 0) {
+                    processByte(0);
+                }
+                while (m_blockByteIndex < 56) {
+                    processByte(0);
+                }
+            }
+            else {
+                while (m_blockByteIndex < 56) {
+                    processByte(0);
+                }
+            }
+            processByte(0);
+            processByte(0);
+            processByte(0);
+            processByte(0);
+            processByte(static_cast<unsigned char>((bitCount >> 24) & 0xFF));
+            processByte(static_cast<unsigned char>((bitCount >> 16) & 0xFF));
+            processByte(static_cast<unsigned char>((bitCount >> 8) & 0xFF));
+            processByte(static_cast<unsigned char>((bitCount) & 0xFF));
+
+            memcpy(digest, m_digest, 5 * sizeof(uint32_t));
+            return digest;
+        }
+    protected:
+        void processBlock() {
+            uint32_t w[80];
+            for (size_t i = 0; i < 16; i++) {
+                w[i] = (m_block[i * 4 + 0] << 24);
+                w[i] |= (m_block[i * 4 + 1] << 16);
+                w[i] |= (m_block[i * 4 + 2] << 8);
+                w[i] |= (m_block[i * 4 + 3]);
+            }
+            for (size_t i = 16; i < 80; i++) {
+                w[i] = LeftRotate((w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]), 1);
+            }
+
+            uint32_t a = m_digest[0];
+            uint32_t b = m_digest[1];
+            uint32_t c = m_digest[2];
+            uint32_t d = m_digest[3];
+            uint32_t e = m_digest[4];
+
+            for (std::size_t i = 0; i < 80; ++i) {
+                uint32_t f = 0;
+                uint32_t k = 0;
+
+                if (i < 20) {
+                    f = (b & c) | (~b & d);
+                    k = 0x5A827999;
+                }
+                else if (i < 40) {
+                    f = b ^ c ^ d;
+                    k = 0x6ED9EBA1;
+                }
+                else if (i < 60) {
+                    f = (b & c) | (b & d) | (c & d);
+                    k = 0x8F1BBCDC;
+                }
+                else {
+                    f = b ^ c ^ d;
+                    k = 0xCA62C1D6;
+                }
+                uint32_t temp = LeftRotate(a, 5) + f + e + k + w[i];
+                e = d;
+                d = c;
+                c = LeftRotate(b, 30);
+                b = a;
+                a = temp;
+            }
+
+            m_digest[0] += a;
+            m_digest[1] += b;
+            m_digest[2] += c;
+            m_digest[3] += d;
+            m_digest[4] += e;
+        }
+    private:
+        digest32_t m_digest;
+        uint8_t m_block[64];
+        size_t m_blockByteIndex;
+        size_t m_byteCount;
+    };
+}
+#endif
+
+
+
+
+
+
+
+
+int clz(uint32_t x)
+{
+    static const char debruijn32[32] = {
+        0, 31, 9, 30, 3, 8, 13, 29, 2, 5, 7, 21, 12, 24, 28, 19,
+        1, 10, 4, 14, 6, 22, 25, 20, 11, 15, 23, 26, 16, 27, 17, 18
+    };
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    x++;
+    return debruijn32[x * 0x076be629 >> 27];
+}
+
+unsigned int CountLeadingZero(const unsigned int* buffer) {
+    unsigned int lastCount = 0;
+    unsigned int result = 0;
+    unsigned int idx = 0;
+    do {
+        unsigned int val = buffer[idx];
+        if (val == 0)
+            lastCount = 32;
+        else
+            lastCount = clz(val);
+        result += lastCount;
+        idx++;
+    } while (lastCount == 32);
+    return result;
+}
+
+
+
+
+
+
 int main(void) {
     printf("started running\n");
 
@@ -94,15 +301,175 @@ int main(void) {
     printf("ret at %d is %d\n", __LINE__, ret);
 
     // Build the program
-    ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+    ret = clBuildProgram(program, 1, &device_id, "-cl-std=CL2.0 "
+#if _DEBUG
+        "-D _DEBUG"
+#endif 
+        , NULL, NULL);
     printf("ret at %d is %d\n", __LINE__, ret);
 
-    char buffer[0x2000];
-    size_t bufSize = 0x2000;
+    char buffer[0x8000];
+    size_t bufSize = 0x8000;
     ret = clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, bufSize, &buffer, &bufSize);
-    printf("ret at %d is %d\n", __LINE__, ret);
+    printf("ret at %d is %d\n%s\n", __LINE__, ret, buffer);
     
     printf("after building\n");
+
+
+    printf("prepare hash state\n");
+    {
+        // Create the OpenCL kernel
+        cl_kernel kernel = clCreateKernel(program, "prepareHashStates", &ret);
+        printf("ret at %d is %d\n", __LINE__, ret);
+
+
+
+        // debug code
+        struct SHA1State {
+
+            unsigned int m_digest[5];
+            unsigned char m_block[64];
+            size_t m_blockByteIndex;
+            size_t m_byteCount;
+        };
+
+        SHA1State StoredHashState;
+
+        cl_mem hashStateMem = clCreateBuffer(context, CL_MEM_READ_WRITE, 1 * sizeof(StoredHashState), NULL, &ret);
+        ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&hashStateMem);
+
+        cl_event event = clCreateUserEvent(context, nullptr);
+        ret = clEnqueueTask(command_queue, kernel, 0, nullptr, &event);
+        clWaitForEvents(1, &event);
+
+
+        CL_INVALID_VALUE;
+
+        ret = clEnqueueReadBuffer(command_queue, hashStateMem, CL_TRUE, 0,
+            1 * sizeof(StoredHashState), &StoredHashState, 0, NULL, &event);
+        clWaitForEvents(1, &event);
+
+
+
+
+
+        clReleaseEvent(event);
+        clReleaseKernel(kernel);
+        clReleaseMemObject(hashStateMem);
+    }
+
+    printf("single hash test\n");
+    {
+        // Create the OpenCL kernel
+        cl_kernel kernel = clCreateKernel(program, "SingleHash", &ret);
+        printf("ret at %d is %d\n", __LINE__, ret);
+
+
+
+        // debug code
+        typedef struct {
+            cl_ulong idx;
+            unsigned int count;
+            char textBuf[180];
+            unsigned int buffer[0x5];
+        } outbufDebug;
+
+        outbufDebug buf;
+
+        cl_ulong startNumber = 780035720717;
+        ret = clSetKernelArg(kernel, 0, sizeof(startNumber), (void*)&startNumber);
+        ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*)&c_mem_obj);
+
+        cl_event event = clCreateUserEvent(context, nullptr);
+        ret = clEnqueueTask(command_queue, kernel, 0, nullptr, &event);
+        clWaitForEvents(1, &event);
+
+
+        CL_INVALID_VALUE;
+
+        ret = clEnqueueReadBuffer(command_queue, c_mem_obj, CL_TRUE, 0,
+            1 * sizeof(buf), &buf, 0, NULL, &event);
+        clWaitForEvents(1, &event);
+
+        auto mycount = CountLeadingZero(buf.buffer);
+
+        clReleaseEvent(event);
+        clReleaseKernel(kernel);
+    }
+
+
+    printf("general hash test\n");
+    {
+        // Create the OpenCL kernel
+        cl_kernel kernel = clCreateKernel(program, "HashTest", &ret);
+        printf("ret at %d is %d\n", __LINE__, ret);
+
+        std::string inputString("MXXpncQ==780035720717");
+
+        cl_mem tempMem = clCreateBuffer(context, CL_MEM_READ_WRITE, inputString.length(), NULL, &ret);
+        ret = clEnqueueWriteBuffer(command_queue, tempMem, CL_TRUE, 0, inputString.length(), (const void*)inputString.data(), 0, NULL, NULL);
+        // debug code
+
+        struct HashState {
+            unsigned int State[5];
+            int curloop;
+            int loops;
+            int length;
+#if _DEBUG
+            unsigned int W[0x10];
+            int plen;
+#endif
+        };
+
+        typedef struct {
+            cl_ulong idx;
+            unsigned int count;
+            char textBuf[180];
+            unsigned int buffer[0x10];
+            HashState state;
+        } outbufDebug;
+
+        outbufDebug buf;
+
+        ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&tempMem);
+        cl_ulong stringLength = inputString.length();
+        ret = clSetKernelArg(kernel, 1, sizeof(stringLength), (void*)&stringLength);
+        ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*)&c_mem_obj);
+
+        cl_event event = clCreateUserEvent(context, nullptr);
+        ret = clEnqueueTask(command_queue, kernel, 0, nullptr, &event);
+        clWaitForEvents(1, &event);
+
+
+        CL_INVALID_VALUE;
+
+        ret = clEnqueueReadBuffer(command_queue, c_mem_obj, CL_TRUE, 0,
+            1 * sizeof(buf), &buf, 0, NULL, &event);
+        clWaitForEvents(1, &event);
+
+        auto test1 = (unsigned int)rotate((unsigned int)0x12345678, 5);
+        auto test2 = (unsigned int)rotate((unsigned int)0x12345678, 30);
+        auto test3 = (unsigned int)rotate((unsigned int)0x67452301, 5);
+
+
+        sha1::SHA1 s;
+        s.processBytes(inputString.c_str(), inputString.size());
+        uint32_t digest[5];
+        s.getDigest(digest);
+        char tmp[48];
+        snprintf(tmp, 45, "%08x %08x %08x %08x %08x", digest[0], digest[1], digest[2], digest[3], digest[4]);
+
+
+
+        clReleaseEvent(event);
+        clReleaseKernel(kernel);
+
+        clReleaseMemObject(tempMem);
+    }
+
+
+    printf("prepare main kernel\n");
+
     // Create the OpenCL kernel
     cl_kernel kernel = clCreateKernel(program, "hash_main", &ret);
     printf("ret at %d is %d\n", __LINE__, ret);
@@ -120,7 +487,13 @@ int main(void) {
     printf("before execution\n");
     // Execute the OpenCL kernel on the list
 
-    uint64_t startOffset =   47160063888ull;
+
+    // FOUND! 41 - 783199680361
+
+    //uint64_t startOffset = 1118701419075ull; //
+    uint64_t startOffset = 783199680360ull;
+    uint8_t currentRecord = 37;
+    //uint64_t startOffset =   540965468048ull;
     //uint64_t startOffset = 4284284665ull;
     A->buffer = startOffset;
     uint64_t endOffset = 0xfffffffffffull;
@@ -128,13 +501,6 @@ int main(void) {
 
     size_t global_item_size = distanceToEnd;
     size_t local_item_size = 1024; // Divide work items into groups of 64
-
-
-
-
-
-
-
 
     struct exitBuf {
         outbuf x[1024];
@@ -149,6 +515,12 @@ int main(void) {
     size_t numberOfBlocks = global_item_size / maxPerBlock;
     auto steps = global_item_size / numberOfBlocks;
     steps -= steps % 8192ull;
+
+    cl_event event = clCreateUserEvent(context, nullptr);
+    int zer = 0;
+    clEnqueueFillBuffer(command_queue, c_mem_obj, &zer, 1,
+        0, sizeof(outbuf)* LIST_SIZE, 0, nullptr, &event);
+    clWaitForEvents(1, &event);
 
 
     for (int i = 0; i < numberOfBlocks; ++i) {
@@ -171,18 +543,24 @@ int main(void) {
         if (i % 256 == 0) {
             printf("%f at %llu\n", static_cast<double>(A->buffer - startOffset) / endOffset, A->buffer);
 
-            int zer = 0;
-
             ret = clEnqueueReadBuffer(command_queue, c_mem_obj, CL_TRUE, 0,
-                LIST_SIZE * sizeof(outbuf), C, 0, NULL, NULL);
+                LIST_SIZE * sizeof(outbuf), C, 0, NULL, &event);
+            clWaitForEvents(1, &event);
 
             for (auto& it : C->x) {
                 if (it.idx == 0) break;
 
                 printf("FOUND! %u - %llu\n", it.count, it.idx);
+                if (it.count == currentRecord)
+                    printf("Alt Record! %u - %llu\n", it.count, it.idx);
+                if (it.count > currentRecord) {
+                    printf("NEW RECORD!!!!!!!!!!!!!!!!!! %u - %llu\n", it.count, it.idx);
+                    currentRecord = it.count;
+                }
+                    
             }
             clEnqueueFillBuffer(command_queue, c_mem_obj, &zer, 1,
-                0, sizeof(outbuf)* LIST_SIZE, 0, nullptr, nullptr);
+                0, sizeof(outbuf)* LIST_SIZE, 0, nullptr, &event);
             ret = clEnqueueReadBuffer(command_queue, c_mem_obj, CL_TRUE, 0,
                 LIST_SIZE * sizeof(outbuf), C, 0, NULL, NULL);
         }
@@ -206,8 +584,9 @@ int main(void) {
     //}
 
     auto end = std::chrono::high_resolution_clock::now();
-    printf("%f hashes per sec",
-        static_cast<double>(global_item_size) / std::chrono::duration_cast<std::chrono::seconds>(end - start).count()
+    printf("%f hashes per sec in %ull ms",
+        static_cast<double>(global_item_size) / std::chrono::duration_cast<std::chrono::seconds>(end - start).count(),
+        (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
     );
 
 

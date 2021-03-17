@@ -11,253 +11,151 @@
     hash array trimmed to size 5
 */
 
-#define rotl32(a,n) rotate ((a), (n)) 
+#define MyOmega "MEXXgaMh3pncQ=="
 
-#define mod(x,y) ((x)-((x)/(y)*(y)))
+#pragma OPENCL EXTENSION cl_khr_int64_base_atomics: enable
 
-#define F2(x,y,z)  ((x) ^ (y) ^ (z))
-#define F1(x,y,z)   (bitselect(z,y,x))
-#define F0(x,y,z)   (bitselect (x, y, ((x) ^ (z))))
+// https://github.com/mohaps/TinySHA1
 
-#define SHA1M_A 0x67452301u
-#define SHA1M_B 0xefcdab89u
-#define SHA1M_C 0x98badcfeu
-#define SHA1M_D 0x10325476u
-#define SHA1M_E 0xc3d2e1f0u
+struct SHA1State {
 
-#define SHA1C00 0x5a827999u
-#define SHA1C01 0x6ed9eba1u
-#define SHA1C02 0x8f1bbcdcu
-#define SHA1C03 0xca62c1d6u
+    unsigned int m_digest[5];
+    unsigned char m_block[64];
+    size_t m_blockByteIndex;
+    size_t m_byteCount;
+};
 
-#define SHA1_STEP(f,a,b,c,d,e,x)    \
-{                                   \
-  e += K;                           \
-  e += x;                           \
-  e += f (b, c, d);                 \
-  e += rotl32 (a,  5u);             \
-  b  = rotl32 (b, 30u);             \
+void sha1_reset(struct SHA1State* state) {
+    state->m_digest[0] = 0x67452301;
+    state->m_digest[1] = 0xEFCDAB89;
+    state->m_digest[2] = 0x98BADCFE;
+    state->m_digest[3] = 0x10325476;
+    state->m_digest[4] = 0xC3D2E1F0;
+    state->m_blockByteIndex = 0;
+    state->m_byteCount = 0;
 }
 
-static void sha1_process2(const unsigned int* W, unsigned int* digest)
-{
-    unsigned int A = digest[0];
-    unsigned int B = digest[1];
-    unsigned int C = digest[2];
-    unsigned int D = digest[3];
-    unsigned int E = digest[4];
-
-    unsigned int w0_t = W[0];
-    unsigned int w1_t = W[1];
-    unsigned int w2_t = W[2];
-    unsigned int w3_t = W[3];
-    unsigned int w4_t = W[4];
-    unsigned int w5_t = W[5];
-    unsigned int w6_t = W[6];
-    unsigned int w7_t = W[7];
-    unsigned int w8_t = W[8];
-    unsigned int w9_t = W[9];
-    unsigned int wa_t = W[10];
-    unsigned int wb_t = W[11];
-    unsigned int wc_t = W[12];
-    unsigned int wd_t = W[13];
-    unsigned int we_t = W[14];
-    unsigned int wf_t = W[15];
-
-#undef K
-#define K SHA1C00
-
-    SHA1_STEP(F1, A, B, C, D, E, w0_t);
-    SHA1_STEP(F1, E, A, B, C, D, w1_t);
-    SHA1_STEP(F1, D, E, A, B, C, w2_t);
-    SHA1_STEP(F1, C, D, E, A, B, w3_t);
-    SHA1_STEP(F1, B, C, D, E, A, w4_t);
-    SHA1_STEP(F1, A, B, C, D, E, w5_t);
-    SHA1_STEP(F1, E, A, B, C, D, w6_t);
-    SHA1_STEP(F1, D, E, A, B, C, w7_t);
-    SHA1_STEP(F1, C, D, E, A, B, w8_t);
-    SHA1_STEP(F1, B, C, D, E, A, w9_t);
-    SHA1_STEP(F1, A, B, C, D, E, wa_t);
-    SHA1_STEP(F1, E, A, B, C, D, wb_t);
-    SHA1_STEP(F1, D, E, A, B, C, wc_t);
-    SHA1_STEP(F1, C, D, E, A, B, wd_t);
-    SHA1_STEP(F1, B, C, D, E, A, we_t);
-    SHA1_STEP(F1, A, B, C, D, E, wf_t);
-    w0_t = rotl32((wd_t ^ w8_t ^ w2_t ^ w0_t), 1u); SHA1_STEP(F1, E, A, B, C, D, w0_t);
-    w1_t = rotl32((we_t ^ w9_t ^ w3_t ^ w1_t), 1u); SHA1_STEP(F1, D, E, A, B, C, w1_t);
-    w2_t = rotl32((wf_t ^ wa_t ^ w4_t ^ w2_t), 1u); SHA1_STEP(F1, C, D, E, A, B, w2_t);
-    w3_t = rotl32((w0_t ^ wb_t ^ w5_t ^ w3_t), 1u); SHA1_STEP(F1, B, C, D, E, A, w3_t);
-
-#undef K
-#define K SHA1C01
-
-    w4_t = rotl32((w1_t ^ wc_t ^ w6_t ^ w4_t), 1u); SHA1_STEP(F2, A, B, C, D, E, w4_t);
-    w5_t = rotl32((w2_t ^ wd_t ^ w7_t ^ w5_t), 1u); SHA1_STEP(F2, E, A, B, C, D, w5_t);
-    w6_t = rotl32((w3_t ^ we_t ^ w8_t ^ w6_t), 1u); SHA1_STEP(F2, D, E, A, B, C, w6_t);
-    w7_t = rotl32((w4_t ^ wf_t ^ w9_t ^ w7_t), 1u); SHA1_STEP(F2, C, D, E, A, B, w7_t);
-    w8_t = rotl32((w5_t ^ w0_t ^ wa_t ^ w8_t), 1u); SHA1_STEP(F2, B, C, D, E, A, w8_t);
-    w9_t = rotl32((w6_t ^ w1_t ^ wb_t ^ w9_t), 1u); SHA1_STEP(F2, A, B, C, D, E, w9_t);
-    wa_t = rotl32((w7_t ^ w2_t ^ wc_t ^ wa_t), 1u); SHA1_STEP(F2, E, A, B, C, D, wa_t);
-    wb_t = rotl32((w8_t ^ w3_t ^ wd_t ^ wb_t), 1u); SHA1_STEP(F2, D, E, A, B, C, wb_t);
-    wc_t = rotl32((w9_t ^ w4_t ^ we_t ^ wc_t), 1u); SHA1_STEP(F2, C, D, E, A, B, wc_t);
-    wd_t = rotl32((wa_t ^ w5_t ^ wf_t ^ wd_t), 1u); SHA1_STEP(F2, B, C, D, E, A, wd_t);
-    we_t = rotl32((wb_t ^ w6_t ^ w0_t ^ we_t), 1u); SHA1_STEP(F2, A, B, C, D, E, we_t);
-    wf_t = rotl32((wc_t ^ w7_t ^ w1_t ^ wf_t), 1u); SHA1_STEP(F2, E, A, B, C, D, wf_t);
-    w0_t = rotl32((wd_t ^ w8_t ^ w2_t ^ w0_t), 1u); SHA1_STEP(F2, D, E, A, B, C, w0_t);
-    w1_t = rotl32((we_t ^ w9_t ^ w3_t ^ w1_t), 1u); SHA1_STEP(F2, C, D, E, A, B, w1_t);
-    w2_t = rotl32((wf_t ^ wa_t ^ w4_t ^ w2_t), 1u); SHA1_STEP(F2, B, C, D, E, A, w2_t);
-    w3_t = rotl32((w0_t ^ wb_t ^ w5_t ^ w3_t), 1u); SHA1_STEP(F2, A, B, C, D, E, w3_t);
-    w4_t = rotl32((w1_t ^ wc_t ^ w6_t ^ w4_t), 1u); SHA1_STEP(F2, E, A, B, C, D, w4_t);
-    w5_t = rotl32((w2_t ^ wd_t ^ w7_t ^ w5_t), 1u); SHA1_STEP(F2, D, E, A, B, C, w5_t);
-    w6_t = rotl32((w3_t ^ we_t ^ w8_t ^ w6_t), 1u); SHA1_STEP(F2, C, D, E, A, B, w6_t);
-    w7_t = rotl32((w4_t ^ wf_t ^ w9_t ^ w7_t), 1u); SHA1_STEP(F2, B, C, D, E, A, w7_t);
-
-#undef K
-#define K SHA1C02
-
-    w8_t = rotl32((w5_t ^ w0_t ^ wa_t ^ w8_t), 1u); SHA1_STEP(F0, A, B, C, D, E, w8_t);
-    w9_t = rotl32((w6_t ^ w1_t ^ wb_t ^ w9_t), 1u); SHA1_STEP(F0, E, A, B, C, D, w9_t);
-    wa_t = rotl32((w7_t ^ w2_t ^ wc_t ^ wa_t), 1u); SHA1_STEP(F0, D, E, A, B, C, wa_t);
-    wb_t = rotl32((w8_t ^ w3_t ^ wd_t ^ wb_t), 1u); SHA1_STEP(F0, C, D, E, A, B, wb_t);
-    wc_t = rotl32((w9_t ^ w4_t ^ we_t ^ wc_t), 1u); SHA1_STEP(F0, B, C, D, E, A, wc_t);
-    wd_t = rotl32((wa_t ^ w5_t ^ wf_t ^ wd_t), 1u); SHA1_STEP(F0, A, B, C, D, E, wd_t);
-    we_t = rotl32((wb_t ^ w6_t ^ w0_t ^ we_t), 1u); SHA1_STEP(F0, E, A, B, C, D, we_t);
-    wf_t = rotl32((wc_t ^ w7_t ^ w1_t ^ wf_t), 1u); SHA1_STEP(F0, D, E, A, B, C, wf_t);
-    w0_t = rotl32((wd_t ^ w8_t ^ w2_t ^ w0_t), 1u); SHA1_STEP(F0, C, D, E, A, B, w0_t);
-    w1_t = rotl32((we_t ^ w9_t ^ w3_t ^ w1_t), 1u); SHA1_STEP(F0, B, C, D, E, A, w1_t);
-    w2_t = rotl32((wf_t ^ wa_t ^ w4_t ^ w2_t), 1u); SHA1_STEP(F0, A, B, C, D, E, w2_t);
-    w3_t = rotl32((w0_t ^ wb_t ^ w5_t ^ w3_t), 1u); SHA1_STEP(F0, E, A, B, C, D, w3_t);
-    w4_t = rotl32((w1_t ^ wc_t ^ w6_t ^ w4_t), 1u); SHA1_STEP(F0, D, E, A, B, C, w4_t);
-    w5_t = rotl32((w2_t ^ wd_t ^ w7_t ^ w5_t), 1u); SHA1_STEP(F0, C, D, E, A, B, w5_t);
-    w6_t = rotl32((w3_t ^ we_t ^ w8_t ^ w6_t), 1u); SHA1_STEP(F0, B, C, D, E, A, w6_t);
-    w7_t = rotl32((w4_t ^ wf_t ^ w9_t ^ w7_t), 1u); SHA1_STEP(F0, A, B, C, D, E, w7_t);
-    w8_t = rotl32((w5_t ^ w0_t ^ wa_t ^ w8_t), 1u); SHA1_STEP(F0, E, A, B, C, D, w8_t);
-    w9_t = rotl32((w6_t ^ w1_t ^ wb_t ^ w9_t), 1u); SHA1_STEP(F0, D, E, A, B, C, w9_t);
-    wa_t = rotl32((w7_t ^ w2_t ^ wc_t ^ wa_t), 1u); SHA1_STEP(F0, C, D, E, A, B, wa_t);
-    wb_t = rotl32((w8_t ^ w3_t ^ wd_t ^ wb_t), 1u); SHA1_STEP(F0, B, C, D, E, A, wb_t);
-
-#undef K
-#define K SHA1C03
-
-    wc_t = rotl32((w9_t ^ w4_t ^ we_t ^ wc_t), 1u); SHA1_STEP(F2, A, B, C, D, E, wc_t);
-    wd_t = rotl32((wa_t ^ w5_t ^ wf_t ^ wd_t), 1u); SHA1_STEP(F2, E, A, B, C, D, wd_t);
-    we_t = rotl32((wb_t ^ w6_t ^ w0_t ^ we_t), 1u); SHA1_STEP(F2, D, E, A, B, C, we_t);
-    wf_t = rotl32((wc_t ^ w7_t ^ w1_t ^ wf_t), 1u); SHA1_STEP(F2, C, D, E, A, B, wf_t);
-    w0_t = rotl32((wd_t ^ w8_t ^ w2_t ^ w0_t), 1u); SHA1_STEP(F2, B, C, D, E, A, w0_t);
-    w1_t = rotl32((we_t ^ w9_t ^ w3_t ^ w1_t), 1u); SHA1_STEP(F2, A, B, C, D, E, w1_t);
-    w2_t = rotl32((wf_t ^ wa_t ^ w4_t ^ w2_t), 1u); SHA1_STEP(F2, E, A, B, C, D, w2_t);
-    w3_t = rotl32((w0_t ^ wb_t ^ w5_t ^ w3_t), 1u); SHA1_STEP(F2, D, E, A, B, C, w3_t);
-    w4_t = rotl32((w1_t ^ wc_t ^ w6_t ^ w4_t), 1u); SHA1_STEP(F2, C, D, E, A, B, w4_t);
-    w5_t = rotl32((w2_t ^ wd_t ^ w7_t ^ w5_t), 1u); SHA1_STEP(F2, B, C, D, E, A, w5_t);
-    w6_t = rotl32((w3_t ^ we_t ^ w8_t ^ w6_t), 1u); SHA1_STEP(F2, A, B, C, D, E, w6_t);
-    w7_t = rotl32((w4_t ^ wf_t ^ w9_t ^ w7_t), 1u); SHA1_STEP(F2, E, A, B, C, D, w7_t);
-    w8_t = rotl32((w5_t ^ w0_t ^ wa_t ^ w8_t), 1u); SHA1_STEP(F2, D, E, A, B, C, w8_t);
-    w9_t = rotl32((w6_t ^ w1_t ^ wb_t ^ w9_t), 1u); SHA1_STEP(F2, C, D, E, A, B, w9_t);
-    wa_t = rotl32((w7_t ^ w2_t ^ wc_t ^ wa_t), 1u); SHA1_STEP(F2, B, C, D, E, A, wa_t);
-    wb_t = rotl32((w8_t ^ w3_t ^ wd_t ^ wb_t), 1u); SHA1_STEP(F2, A, B, C, D, E, wb_t);
-    wc_t = rotl32((w9_t ^ w4_t ^ we_t ^ wc_t), 1u); SHA1_STEP(F2, E, A, B, C, D, wc_t);
-    wd_t = rotl32((wa_t ^ w5_t ^ wf_t ^ wd_t), 1u); SHA1_STEP(F2, D, E, A, B, C, wd_t);
-    we_t = rotl32((wb_t ^ w6_t ^ w0_t ^ we_t), 1u); SHA1_STEP(F2, C, D, E, A, B, we_t);
-    wf_t = rotl32((wc_t ^ w7_t ^ w1_t ^ wf_t), 1u); SHA1_STEP(F2, B, C, D, E, A, wf_t);
-
-    // Macros don't have scope, so this K was being preserved
-#undef K
-
-    digest[0] += A;
-    digest[1] += B;
-    digest[2] += C;
-    digest[3] += D;
-    digest[4] += E;
-}
-
-unsigned int SWAP(unsigned int val)
-{
-    return (rotate(((val) & 0x00FF00FF), 24U) | rotate(((val) & 0xFF00FF00), 8U));
-}
-
-#define word unsigned int
-
-static void hash_global(__private const unsigned int *pass, int pass_len, __private unsigned int* hash) {
-    int plen = pass_len / 4;
-    if (mod(pass_len, 4)) plen++;
-    __private unsigned int* p = hash;
-    unsigned int W[0x10] = {0};
-    int loops = plen;
-    int curloop = 0;
-    unsigned int State[5] = {0};
-    State[0] = 0x67452301;
-    State[1] = 0xefcdab89;
-    State[2] = 0x98badcfe;
-    State[3] = 0x10325476;
-    State[4] = 0xc3d2e1f0;
-    while (loops > 0) {
-        W[0x0] = 0x0;
-        W[0x1] = 0x0;
-        W[0x2] = 0x0;
-        W[0x3] = 0x0;
-        W[0x4] = 0x0;
-        W[0x5] = 0x0;
-        W[0x6] = 0x0;
-        W[0x7] = 0x0;
-        W[0x8] = 0x0;
-        W[0x9] = 0x0;
-        W[0xA] = 0x0;
-        W[0xB] = 0x0;
-        W[0xC] = 0x0;
-        W[0xD] = 0x0;
-        W[0xE] = 0x0;
-        W[0xF] = 0x0;
-        for (int m = 0; loops != 0 && m < 16; m++) {
-            W[m] ^= SWAP(pass[m + (curloop * 16)]);
-            loops--;
-        }
-        if (loops == 0 && mod(pass_len, 64) != 0) {
-            unsigned int padding = 0x80 << (((pass_len + 4) - ((pass_len + 4) / 4 * 4)) * 8);
-            int v = mod(pass_len, 64);
-            W[v / 4] |= SWAP(padding);
-            if ((pass_len & 0x3B) != 0x3B) { W[0x0F] = pass_len * 8; }
-        }
-        sha1_process2(W, State);
-        curloop++;
+void sha1_processBlock(struct SHA1State* state) {
+    unsigned int w[80];
+    for (size_t i = 0; i < 16; i++) {
+        w[i] = (state->m_block[i * 4 + 0] << 24);
+        w[i] |= (state->m_block[i * 4 + 1] << 16);
+        w[i] |= (state->m_block[i * 4 + 2] << 8);
+        w[i] |= (state->m_block[i * 4 + 3]);
     }
-    if (mod(plen, 16) == 0) {
-        W[0x0] = 0x0;
-        W[0x1] = 0x0;
-        W[0x2] = 0x0;
-        W[0x3] = 0x0;
-        W[0x4] = 0x0;
-        W[0x5] = 0x0;
-        W[0x6] = 0x0;
-        W[0x7] = 0x0;
-        W[0x8] = 0x0;
-        W[0x9] = 0x0;
-        W[0xA] = 0x0;
-        W[0xB] = 0x0;
-        W[0xC] = 0x0;
-        W[0xD] = 0x0;
-        W[0xE] = 0x0;
-        W[0xF] = 0x0;
-        if ((pass_len & 0x3B) != 0x3B) {
-            unsigned int padding = 0x80 << (((pass_len + 4) - ((pass_len + 4) / 4 * 4)) * 8);
-            W[0] |= SWAP(padding);
-        }
-        W[0x0F] = pass_len * 8;
-        sha1_process2(W, State);
+    for (size_t i = 16; i < 80; i++) {
+        w[i] = rotate((unsigned int)(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]), (unsigned int)1u);
     }
-    p[0] = SWAP(State[0]);
-    p[1] = SWAP(State[1]);
-    p[2] = SWAP(State[2]);
-    p[3] = SWAP(State[3]);
-    p[4] = SWAP(State[4]);
-    return;
+
+    unsigned int a = state->m_digest[0];
+    unsigned int b = state->m_digest[1];
+    unsigned int c = state->m_digest[2];
+    unsigned int d = state->m_digest[3];
+    unsigned int e = state->m_digest[4];
+
+    for (unsigned int i = 0; i < 80; ++i) {
+        unsigned int f = 0;
+        unsigned int k = 0;
+
+        if (i < 20) {
+            f = (b & c) | (~b & d);
+            k = 0x5A827999;
+        }
+        else if (i < 40) {
+            f = b ^ c ^ d;
+            k = 0x6ED9EBA1;
+        }
+        else if (i < 60) {
+            f = (b & c) | (b & d) | (c & d);
+            k = 0x8F1BBCDC;
+        }
+        else {
+            f = b ^ c ^ d;
+            k = 0xCA62C1D6;
+        }
+        unsigned int temp = rotate(a, (unsigned int)5) + f + e + k + w[i];
+        e = d;
+        d = c;
+        c = rotate(b, (unsigned int)30u);
+        b = a;
+        a = temp;
+    }
+
+    state->m_digest[0] += a;
+    state->m_digest[1] += b;
+    state->m_digest[2] += c;
+    state->m_digest[3] += d;
+    state->m_digest[4] += e;
 }
 
-#undef mod
+void sha1_processByte(struct SHA1State* state, unsigned char octet) {
+    state->m_block[state->m_blockByteIndex++] = octet;
+    ++state->m_byteCount;
+    if (state->m_blockByteIndex == 64) {
+        state->m_blockByteIndex = 0;
+        sha1_processBlock(state);
+    }
+}
 
-#undef rotl32
-#undef F0
-#undef F1
-#undef F2
+void sha1_processBlockRange(struct SHA1State* state, const void* const start, const void* const end) {
+    const unsigned char* begin = (const unsigned char*)(start);
+    const unsigned char* finish = (const unsigned char*)(end);
+    while (begin != finish) {
+        sha1_processByte(state, *begin);
+        begin++;
+    }
+}
+
+void sha1_processBytes(struct SHA1State* state, const void* const data, unsigned int len) {
+    const unsigned char* block = (const unsigned char*)(data);
+    sha1_processBlockRange(state, block, block + len);
+}
+
+void sha1_getDigest(struct SHA1State* state, unsigned int* digest) {
+    unsigned int bitCount = state->m_byteCount * 8;
+    sha1_processByte(state, 0x80);
+    if (state->m_blockByteIndex > 56) {
+        while (state->m_blockByteIndex != 0) {
+            sha1_processByte(state, 0);
+        }
+        while (state->m_blockByteIndex < 56) {
+            sha1_processByte(state, 0);
+        }
+    }
+    else {
+        while (state->m_blockByteIndex < 56) {
+            sha1_processByte(state, 0);
+        }
+    }
+    sha1_processByte(state, 0);
+    sha1_processByte(state, 0);
+    sha1_processByte(state, 0);
+    sha1_processByte(state, 0);
+    sha1_processByte(state, (unsigned char)((bitCount >> 24) & 0xFF));
+    sha1_processByte(state, (unsigned char)((bitCount >> 16) & 0xFF));
+    sha1_processByte(state, (unsigned char)((bitCount >> 8) & 0xFF));
+    sha1_processByte(state, (unsigned char)((bitCount) & 0xFF));
+
+    digest[0] = state->m_digest[0];
+    digest[1] = state->m_digest[1];
+    digest[2] = state->m_digest[2];
+    digest[3] = state->m_digest[3];
+    digest[4] = state->m_digest[4];
+}
+
+struct HashState {
+    unsigned int State[5];
+    int curloop;
+    int loops;
+    int length;
+#if _DEBUG
+    unsigned int W[0x10];
+    int plen;
+#endif
+};
+
+
+__global struct SHA1State StoredHashState;
 
 typedef struct {
     ulong buffer;
@@ -271,6 +169,16 @@ typedef struct {
 
 //https://github.com/wyaneva/clClibc/blob/master/cl-string.h
 
+char* strcpyGen(char* dest, char* source) {
+    char* destptr = dest;
+    do {
+        *destptr = *source++;
+    } while (*destptr++);
+
+    return destptr;
+}
+
+
 char* strcpy(char* dest, __private char* source) {
     char* destptr = dest;
     do {
@@ -280,6 +188,16 @@ char* strcpy(char* dest, __private char* source) {
     return destptr;
 }
 
+char* strcpyGlob(char* dest, __global char* source) {
+    char* destptr = dest;
+    do {
+        *destptr = *source++;
+    } while (*destptr++);
+
+    return destptr;
+}
+
+
 char* strcpyCst(char* dest, __constant char* source) {
     char* destptr = dest;
     do {
@@ -288,6 +206,17 @@ char* strcpyCst(char* dest, __constant char* source) {
 
     return destptr;
 }
+
+char* strcpyPrivToGlob(__global char* dest, char* source) {
+    char* destptr = dest;
+    do {
+        *destptr = *source++;
+    } while (*destptr++);
+
+    return destptr;
+}
+
+
 
 /* A utility function to reverse a string  */
 void reverse(char* str, int length)
@@ -352,12 +281,124 @@ __private unsigned int CountLeadingZero(__private const unsigned int* buffer) {
         if (val == 0)
             lastCount = 32;
         else
-            lastCount = 31 - clz(val &-val);
+            lastCount = clz(val);
         result += lastCount;
         idx++;
     } while (lastCount == 32);
     return result;
 }
+
+
+__kernel void prepareHashStates(__global struct SHA1State* stateBuffer) {
+
+    __private unsigned int buffer[0x20] = { 0xffffffff };
+
+    char* bufferArray = (char*)&buffer;
+
+    strcpyCst(bufferArray, MyOmega);
+
+
+    sha1_reset(&StoredHashState);
+    sha1_processBytes(&StoredHashState, buffer, 108);
+   
+    stateBuffer[0] = StoredHashState;
+}
+
+
+typedef struct {
+    ulong idx;
+    unsigned int count;
+    char textBuf[180];
+    unsigned int buffer[0x10];
+
+    struct HashState state;
+} outbufDebug;
+
+
+__kernel void HashTest(__global unsigned int* inputString, ulong inputLength, __global outbufDebug* outbuffer)
+{
+    __private unsigned int hashbuffer[0x5] = { 0 };
+
+    __private unsigned int buffer[0x20] = { 0x00000000 };
+
+    char* bufferArray = (char*)&buffer;
+
+    strcpyGlob(bufferArray, inputString);
+
+    __private struct SHA1State state;
+    sha1_reset(&state);
+    sha1_processBytes(&state, buffer, inputLength);
+    sha1_getDigest(&state, hashbuffer);
+
+    strcpyGen(outbuffer[0].textBuf, (char*)inputString);
+
+
+    outbuffer[0].buffer[0x0] = hashbuffer[0x0];
+    outbuffer[0].buffer[0x1] = hashbuffer[0x1];
+    outbuffer[0].buffer[0x2] = hashbuffer[0x2];
+    outbuffer[0].buffer[0x3] = hashbuffer[0x3];
+    outbuffer[0].buffer[0x4] = hashbuffer[0x4];
+    outbuffer[0].buffer[0xd] = (unsigned int)rotate((unsigned int)0x12345678, (unsigned int)5);
+    outbuffer[0].buffer[0xe] = (unsigned int)rotate((unsigned int)0x12345678, (unsigned int)30);
+    outbuffer[0].buffer[0xf] = (unsigned int)bitselect((unsigned int)0x12345678, (unsigned int)0xffffffff, (unsigned int)0x00000000);
+    outbuffer[0].count = CountLeadingZero(hashbuffer);
+
+
+}
+
+
+__kernel void SingleHash(ulong number, __global outbufDebug* outbuffer)
+{
+
+    __private unsigned int buffer[0x20] = { 0xffffffff };
+
+    char* bufferArray = (char*)&buffer;
+
+    strcpyCst(bufferArray, MyOmega);
+    char* numberDest = &(bufferArray[108]);
+    __private char numberSource[16] = { 0 };
+    itoa(number, numberSource);
+    __private unsigned int length = (strcpy(numberDest, numberSource) - (__private char*) & buffer) - 1;
+    // unsigned int hash[20/4]={0};
+
+    __private unsigned int hashbuffer[0x5] = { 0 };
+
+    __private struct SHA1State state;
+
+
+
+    state = StoredHashState;
+    sha1_processBytes(&state, numberSource, length - 108);
+
+
+    //sha1_reset(&state);
+    //sha1_processBytes(&state, buffer, length);
+
+
+    sha1_getDigest(&state, hashbuffer);
+
+
+
+
+
+
+
+    outbuffer[0].idx = number;
+
+    strcpyPrivToGlob(outbuffer[0].textBuf, bufferArray);
+
+
+    outbuffer[0].buffer[0x0] = hashbuffer[0x0];
+    outbuffer[0].buffer[0x1] = hashbuffer[0x1];
+    outbuffer[0].buffer[0x2] = hashbuffer[0x2];
+    outbuffer[0].buffer[0x3] = hashbuffer[0x3];
+    outbuffer[0].buffer[0x4] = hashbuffer[0x4];
+    outbuffer[0].count = CountLeadingZero(hashbuffer);
+
+}
+
+
+
 
 __kernel void hash_main(__global const inbuf* inbuffer, __global outbuf* outbuffer)
 {
@@ -370,16 +411,37 @@ __kernel void hash_main(__global const inbuf* inbuffer, __global outbuf* outbuff
 
     char* bufferArray = (char*) &buffer;
 
-    strcpyCst(bufferArray, "MEXXAgcAXXEgAXXAyIXXMeXXjHKUXXh2ceXXrh55XXJXXb/85I+B9XXdYecCIXXBKmb8XXXWhgXXtoTXXdz1tNVXXXq3nXXIGgaMXXpXXQ==");
+    strcpyCst(bufferArray, MyOmega);
     char* numberDest = &(bufferArray[108]);
     __private char numberSource[16] = {0};
     itoa(number, numberSource);
    __private unsigned int length = (strcpy(numberDest, numberSource) - (__private char*)&buffer) - 1;
     // unsigned int hash[20/4]={0};
 
-   __private unsigned int hashbuffer[0x10] = {0};
+   __private unsigned int hashbuffer[0x5] = {0};
 
-    hash_global(buffer, length, hashbuffer);
+
+   //hash_global(buffer, length, hashbuffer);
+
+
+
+   __private struct SHA1State state;
+
+   state = StoredHashState;
+   sha1_processBytes(&state, numberSource, length - 108);
+
+
+   //sha1_reset(&state);
+   //sha1_processBytes(&state, buffer, length);
+
+
+
+   sha1_getDigest(&state, hashbuffer);
+
+
+   //HashFromState(buffer, length, hashbuffer, &StoredHashState);
+
+   
     //outbuffer[32].idx = number;
 
 
@@ -456,7 +518,7 @@ __kernel void hash_main(__global const inbuf* inbuffer, __global outbuf* outbuff
     if (CountLeadingZero(hashbuffer) < 30) return;
 
     for (int i = 0; i < 1024; ++i) {
-        if (outbuffer[i].idx == 0) {
+        if (atomic_cmpxchg(&outbuffer[i].idx, 0, number) == 0) {
             outbuffer[i].idx = number;
             outbuffer[i].count = CountLeadingZero(hashbuffer);
             return;
