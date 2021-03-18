@@ -3,6 +3,7 @@
 #include <cstring>
 #include <string_view>
 #include <chrono>
+#include <thread>
 
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
@@ -10,11 +11,9 @@
 #include <CL/cl.h>
 #endif
 
-#define MAX_SOURCE_SIZE (0x100000)
+using namespace std::chrono_literals;
 
-typedef struct {
-    cl_ulong buffer;
-} inbuf;
+#define MAX_SOURCE_SIZE (0x100000)
 
 typedef struct {
     cl_ulong idx;
@@ -238,14 +237,7 @@ int main(void) {
     // Create the two input vectors
     int i;
     const int LIST_SIZE = 1024;
-    inbuf* A = (inbuf*)malloc(sizeof(inbuf) * 1);
-    for (i = 0; i < 1; i++) {
-        //auto aChar = (char*)&A[i].buffer;
-        //strcpy_s(aChar, 15, target.data());
-        A[i].buffer = 1664974585;
-
-    }
-
+    const int outbufSize = 128; // referenced in kernel too!
     // Load the kernel source code into the array source_str
     FILE* fp = nullptr;
     char* source_str;
@@ -272,6 +264,11 @@ int main(void) {
     cl_int ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
     ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_GPU, 1,
         &device_id, &ret_num_devices);
+    size_t maxWorkGroupSize;
+    clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &maxWorkGroupSize, nullptr);
+
+    size_t maxWorkItemCount[3]; // Maximum number of work-items that can be specified in each dimension of the work-group to clEnqueueNDRangeKernel.
+    clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(maxWorkItemCount), maxWorkItemCount, nullptr);
 
 
     printf("ret at %d is %d\n", __LINE__, ret);
@@ -280,19 +277,13 @@ int main(void) {
     printf("ret at %d is %d\n", __LINE__, ret);
 
     // Create a command queue
-    cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &ret);
+    cl_command_queue command_queue = clCreateCommandQueue(context, device_id, 0, &ret); //CL_QUEUE_PROFILING_ENABLE
+    // second command queue, used only for fetching results
+    cl_command_queue resultRequestCommandQueue = clCreateCommandQueue(context, device_id, 0, &ret);
     printf("ret at %d is %d\n", __LINE__, ret);
 
     // Create memory buffers on the device for each vector 
-    cl_mem a_mem_obj = clCreateBuffer(context, CL_MEM_READ_ONLY,
-        1 * sizeof(inbuf), NULL, &ret);
-    cl_mem c_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY,
-        LIST_SIZE * sizeof(outbuf), NULL, &ret);
-
-    // Copy the lists A and B to their respective memory buffers
-    ret = clEnqueueWriteBuffer(command_queue, a_mem_obj, CL_TRUE, 0,
-        1 * sizeof(inbuf), A, 0, NULL, NULL);
-    printf("ret at %d is %d\n", __LINE__, ret);
+    cl_mem c_mem_obj = clCreateBuffer(context, CL_MEM_WRITE_ONLY, outbufSize * sizeof(outbuf), NULL, &ret);
 
     printf("before building\n");
     // Create a program from the kernel source
@@ -474,10 +465,6 @@ int main(void) {
     cl_kernel kernel = clCreateKernel(program, "hash_main", &ret);
     printf("ret at %d is %d\n", __LINE__, ret);
 
-    // Set the arguments of the kernel
-    ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&a_mem_obj);
-    printf("ret at %d is %d\n", __LINE__, ret);
-
     ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*)&c_mem_obj);
     printf("ret at %d is %d\n", __LINE__, ret);
 
@@ -490,66 +477,53 @@ int main(void) {
 
     // FOUND! 41 - 783199680361
 
-    //uint64_t startOffset = 1118701419075ull; //
-    uint64_t startOffset = 783199680360ull;
-    uint8_t currentRecord = 37;
-    //uint64_t startOffset =   540965468048ull;
-    //uint64_t startOffset = 4284284665ull;
-    A->buffer = startOffset;
+    uint64_t startOffset = 1133517265131ull; // current value, everything else is testing
+    //uint64_t startOffset = 783199680351ull;
+    uint8_t currentRecord = 40;
     uint64_t endOffset = 0xfffffffffffull;
+    //uint64_t endOffset = 1136085784811ull;
+    //uint64_t endOffset = 783199680351ull + (1136085784811ull -1133517265131ull);
+    //uint64_t endOffset = 1136503441131ull;
     uint64_t distanceToEnd = endOffset - startOffset;
 
     size_t global_item_size = distanceToEnd;
-    size_t local_item_size = 1024; // Divide work items into groups of 64
+    size_t local_item_size = maxWorkGroupSize; //1024; // Divide work items into groups
 
     struct exitBuf {
-        outbuf x[1024];
+        outbuf x[outbufSize];
     };
 
-    exitBuf* C = (exitBuf*)malloc(sizeof(outbuf) * LIST_SIZE);
+    exitBuf* C = (exitBuf*)malloc(sizeof(outbuf) * outbufSize);
 
     auto start = std::chrono::high_resolution_clock::now();
 
 
-    size_t maxPerBlock = 10000000;
+    size_t maxPerBlock = 0x1000000;
     size_t numberOfBlocks = global_item_size / maxPerBlock;
     auto steps = global_item_size / numberOfBlocks;
     steps -= steps % 8192ull;
 
     cl_event event = clCreateUserEvent(context, nullptr);
+    cl_event blockEvent = clCreateUserEvent(context, nullptr);
     int zer = 0;
-    clEnqueueFillBuffer(command_queue, c_mem_obj, &zer, 1,
-        0, sizeof(outbuf)* LIST_SIZE, 0, nullptr, &event);
+    clEnqueueFillBuffer(command_queue, c_mem_obj, &zer, 1, 0, sizeof(outbuf) * outbufSize, 0, nullptr, &event);
     clWaitForEvents(1, &event);
 
+    cl_ulong currentStartOffset = startOffset;
 
-    for (int i = 0; i < numberOfBlocks; ++i) {
-
-        ret = clEnqueueWriteBuffer(command_queue, a_mem_obj, CL_TRUE, 0,
-            1 * sizeof(inbuf), A, 0, NULL, NULL);
-        //printf("ret at %d is %d\n", __LINE__, ret);
-        A->buffer += steps;
-        //printf("doing %llu\nto    %llu  %f\n", A->buffer, A->buffer + steps, static_cast<double>(A->buffer - startOffset) / endOffset);
-        ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL,
-            &steps, &local_item_size, 0, NULL, NULL);
+    bool fetchResults = true;
+    // thread that fetches the results independent of the work queueing.
+    std::thread resultFetchThread([&]() {
+        do {
+            std::this_thread::sleep_for(5s);
 
 
-        auto end = std::chrono::high_resolution_clock::now();
-        auto distance = A->buffer - startOffset;
-        auto millisecondsElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        if (millisecondsElapsed > 0)
-        //printf("%llu %llu KH/s\n", distance, (distance / millisecondsElapsed)*1000 );
+            ret = clEnqueueReadBuffer(resultRequestCommandQueue, c_mem_obj, CL_TRUE, 0, outbufSize * sizeof(outbuf), C, 0, nullptr, nullptr);
 
-        if (i % 256 == 0) {
-            printf("%f at %llu\n", static_cast<double>(A->buffer - startOffset) / endOffset, A->buffer);
-
-            ret = clEnqueueReadBuffer(command_queue, c_mem_obj, CL_TRUE, 0,
-                LIST_SIZE * sizeof(outbuf), C, 0, NULL, &event);
-            clWaitForEvents(1, &event);
-
+            uint32_t clearedEntriesCount = 0;
             for (auto& it : C->x) {
                 if (it.idx == 0) break;
-
+                clearedEntriesCount++;
                 printf("FOUND! %u - %llu\n", it.count, it.idx);
                 if (it.count == currentRecord)
                     printf("Alt Record! %u - %llu\n", it.count, it.idx);
@@ -557,50 +531,77 @@ int main(void) {
                     printf("NEW RECORD!!!!!!!!!!!!!!!!!! %u - %llu\n", it.count, it.idx);
                     currentRecord = it.count;
                 }
-                    
+
             }
-            clEnqueueFillBuffer(command_queue, c_mem_obj, &zer, 1,
-                0, sizeof(outbuf)* LIST_SIZE, 0, nullptr, &event);
-            ret = clEnqueueReadBuffer(command_queue, c_mem_obj, CL_TRUE, 0,
-                LIST_SIZE * sizeof(outbuf), C, 0, NULL, NULL);
+            if (clearedEntriesCount != 0) {
+                clEnqueueFillBuffer(resultRequestCommandQueue, c_mem_obj, &zer, 1, 0, sizeof(outbuf) * clearedEntriesCount, 0, nullptr, &event);
+                clWaitForEvents(1, &event);
+            }
+        } while (fetchResults);
+    });
+
+    uint64_t queuedHashes = 0;
+    for (int i = 0; i < numberOfBlocks; ++i) {
+
+        // Set the arguments of the kernel
+        ret = clSetKernelArg(kernel, 0, sizeof(cl_ulong), (void*)&currentStartOffset);
+        
+        //printf("ret at %d is %d\n", __LINE__, ret);
+        currentStartOffset += steps;
+        //printf("doing %llu\nto    %llu  %f\n", A->buffer, A->buffer + steps, static_cast<double>(A->buffer - startOffset) / endOffset);
+        ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL,
+            &steps, &local_item_size, 0, NULL, nullptr);
+        queuedHashes += steps;
+
+        //clWaitForEvents(1, &blockEvent);
+        //cl_ulong start = 0, end = 0;
+        //clGetEventProfilingInfo(blockEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
+        //clGetEventProfilingInfo(blockEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end, NULL);
+        //auto elapsed = end - start;
+
+
+        //auto end = std::chrono::high_resolution_clock::now();
+        //auto distance = currentStartOffset - startOffset;
+        //auto millisecondsElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        //if (millisecondsElapsed > 0)
+        //printf("%llu %llu KH/s\n", distance, (distance / millisecondsElapsed)*1000 );
+
+        if (i % 16 == 0)
+            clFlush(command_queue);
+        if (i % 128 == 0)
+        {
+            printf("%f at %llu\n", static_cast<double>(currentStartOffset - startOffset) / (endOffset - startOffset), currentStartOffset);
+            clFlush(command_queue);
+            //clFinish(command_queue);
         }
 
     }
 
     printf("after execution\n");
-    // Read the memory buffer C on the device to the local variable C
 
-    ret = clEnqueueReadBuffer(command_queue, c_mem_obj, CL_TRUE, 0,
-        LIST_SIZE * sizeof(outbuf), C, 0, NULL, NULL);
-    printf("after copying\n");
-    // Display the result to the screen
-    //for (i = 0; i < LIST_SIZE; i++) {
-        //auto outBufferChar = (char*)&C[i].buffer;
-        //printf("%s = ", (char*)&A[i].buffer);
-        //for (int i = 0; i < strlen(outBufferChar); i++) {
-        //    printf(" %02x", outBufferChar[i]);
-        //}
-        //printf("\n");
-    //}
+
+    // wait for all open jobs to finish
+    ret = clFlush(command_queue);
+    ret = clFinish(command_queue);
 
     auto end = std::chrono::high_resolution_clock::now();
     printf("%f hashes per sec in %ull ms",
-        static_cast<double>(global_item_size) / std::chrono::duration_cast<std::chrono::seconds>(end - start).count(),
+        static_cast<double>(queuedHashes) / std::chrono::duration_cast<std::chrono::seconds>(end - start).count(),
         (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
     );
 
+    fetchResults = false;
+    resultFetchThread.join();
 
 
     // Clean up
-    ret = clFlush(command_queue);
-    ret = clFinish(command_queue);
     ret = clReleaseKernel(kernel);
     ret = clReleaseProgram(program);
-    ret = clReleaseMemObject(a_mem_obj);
     ret = clReleaseMemObject(c_mem_obj);
     ret = clReleaseCommandQueue(command_queue);
     ret = clReleaseContext(context);
-    free(A);
+    ret = clReleaseEvent(event);
+    ret = clReleaseEvent(blockEvent);
     free(C);
     return 0;
 }

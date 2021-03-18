@@ -400,11 +400,10 @@ __kernel void SingleHash(ulong number, __global outbufDebug* outbuffer)
 
 
 
-__kernel void hash_main(__global const inbuf* inbuffer, __global outbuf* outbuffer)
+__kernel void hash_main(ulong baseNumber, __global outbuf* outbuffer)
 {
     unsigned int globalID = get_global_id(0);
     unsigned int idx = get_local_id(0);
-    ulong baseNumber = inbuffer[0].buffer;
     ulong number = baseNumber + globalID;
 
     __private unsigned int buffer[0x20] = {0xffffffff};
@@ -515,9 +514,9 @@ __kernel void hash_main(__global const inbuf* inbuffer, __global outbuf* outbuff
     //    outbuffer[34].buffer[0x1f] = hashbuffer[0x1f];
     //}
 
-    if (CountLeadingZero(hashbuffer) < 30) return;
+    if (CountLeadingZero(hashbuffer) < 35) return;
 
-    for (int i = 0; i < 1024; ++i) {
+    for (int i = 0; i < 128; ++i) {
         if (atomic_cmpxchg(&outbuffer[i].idx, 0, number) == 0) {
             outbuffer[i].idx = number;
             outbuffer[i].count = CountLeadingZero(hashbuffer);
